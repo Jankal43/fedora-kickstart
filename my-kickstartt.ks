@@ -59,20 +59,19 @@ cat << EOF > /usr/local/bin/start_app_container.sh
 
 sleep 30
 echo "Próba pobrania obrazu Docker..."
-docker pull twojanazwa/twojaaplikacja:tag # << ZMIEŃ TO!
+docker pull jankal43/projekt-app:latest # << ZMIENIONE!
 echo "Próba usunięcia starego kontenera (jeśli istnieje)..."
-docker rm -f moj-kontener-aplikacji || true # << ZMIEŃ TO!
+docker rm -f app-container || true # << ZMIENIONE!
 echo "Próba uruchomienia nowego kontenera..."
-docker run -d --name moj-kontener-aplikacji -p 8080:80 twojanazwa/twojaaplikacja:tag # << ZMIEŃ TO!
+docker run -d --name app-container -p 8080:80 jankal43/projekt-app:latest # << ZMIENIONE!
 echo "Skrypt start_app_container.sh zakończony."
 EOF
 chmod +x /usr/local/bin/start_app_container.sh
 
-
 cat << EOF > /etc/systemd/system/run-my-app-container.service
 [Unit]
 Description=Uruchomienie mojej aplikacji w kontenerze Docker
-Requires=docker.service network-online.target # Uruchom po Dockerze i sieci
+Requires=docker.service network-online.target
 After=docker.service network-online.target
 
 [Service]
@@ -83,7 +82,6 @@ ExecStart=/usr/local/bin/start_app_container.sh
 [Install]
 WantedBy=multi-user.target
 EOF
-
 
 systemctl enable run-my-app-container.service
 
