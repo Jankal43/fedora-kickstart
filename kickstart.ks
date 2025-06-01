@@ -1,4 +1,5 @@
 # Kickstart File for Fedora 41 Unattended Installation with Docker App from .tar
+# Używa moby-engine z repozytoriów Fedory
 
 #version=DEVEL
 
@@ -14,12 +15,13 @@ repo --name=updates --mirrorlist=http://mirrors.fedoraproject.org/mirrorlist?rep
 # Network information
 # dhcp on boot, and set a hostname
 network --bootproto=dhcp --device=link --activate --onboot=on
-network --hostname=fedora-mdoapp-server # Możesz zmienić hostname
+network --hostname=fedora-mdoapp-server # !!! Możesz zmienić hostname !!!
 
 # Root password (encrypted, replace with your own "openssl passwd -6")
-# Poniższe hasło to "fedora"
+# !!! Poniższe hasło to "fedora" - ZMIEŃ JE !!!
 rootpw --iscrypted $6$randomsalt$K1bHw7kjm.mH6A0NlJgS0.PsgS8K7bEZcPjvLDeNoLOURzf0A3NhNn2O299ZqgoiNCgRj.faldECkCmvBMjZA0
 # User account
+# !!! Zmień hasło użytkownika "kaletka" !!!
 user --name=kaletka --groups=wheel --password=root --plaintext --gecos="Kaletka User"
 
 # System timezone
@@ -32,46 +34,40 @@ autopart --type=lvm # Automatic LVM partitioning
 
 # Packages to install
 %packages
-@^server-product-environment # Or @^minimal-environment if you prefer less
-docker-ce
-docker-ce-cli
-containerd.io
-wget # Needed to download the .tar file
-# Add any other essential tools you might need
+@^server-product-environment # Lub @^minimal-environment jeśli wolisz mniej
+moby-engine   # Zamiast docker-ce, pociąga potrzebne zależności jak containerd
+wget          # Nadal potrzebne do pobrania pliku .tar
+# docker-compose # Jeśli potrzebujesz Docker Compose, dodaj ten pakiet (z repo Fedory)
 %end
 
 # Post-installation script
 %post --log=/root/ks-post.log --erroronfail
 echo ">>> Starting %post script..."
 
-# --- Docker Setup ---
-echo ">>> Adding Docker CE repository..."
-# Docker CE repository URL is usually generic for Fedora, but dnf variables handle versioning.
-# If issues arise, check Docker's official Fedora installation guide for F41 specific repo files.
-dnf config-manager --add-repo https://download.docker.com/linux/fedora/docker-ce.repo
+# --- Docker Setup (using moby-engine from Fedora repos) ---
+# Nie ma potrzeby dodawania repozytorium Docker CE ani ponownej instalacji,
+# ponieważ moby-engine jest instalowany z repozytoriów Fedory w sekcji %packages.
 
-echo ">>> Ensuring Docker CE is installed (redundant if %packages worked, but safe)..."
-dnf install -y docker-ce docker-ce-cli containerd.io
-
-echo ">>> Enabling Docker service to start on boot..."
+echo ">>> Enabling Docker service (moby-engine) to start on boot..."
+# Nazwa usługi dla moby-engine w Fedorze to zazwyczaj 'docker.service'
 systemctl enable docker.service
 
 # --- Application Deployment from .tar ---
 DOCKER_TAR_FILE="mdoapp-deploy0image-30.tar"
-# !!! ZASTĄP PONIŻSZY ADRES IP I PORT SWOIMI WARTOŚCIAMI !!!
-TAR_DOWNLOAD_URL="http://192.168.20.103:8000/${DOCKER_TAR_FILE}" # <--- TWÓJ ADRES IP I PORT TUTAJ
+# !!! ZASTĄP PONIŻSZY ADRES IP I PORT SWOIMI RZECZYWISTYMI WARTOŚCIAMI !!!
+TAR_DOWNLOAD_URL="http://192.168.1.10:8000/${DOCKER_TAR_FILE}" # <--- TWÓJ ADRES IP I PORT TUTAJ
 LOCAL_TAR_PATH="/opt/docker_images/${DOCKER_TAR_FILE}"
 IMAGE_STORAGE_DIR="/opt/docker_images"
 
-# !!! ZASTĄP PONIŻSZE WARTOŚCI SWOIMI !!!
+# !!! ZASTĄP PONIŻSZE WARTOŚCI SWOIMI RZECZYWISTYMI WARTOŚCIAMI !!!
 # Nazwa obrazu i tag, który jest ZAPISANY WEWNĄTRZ PLIKU .TAR
-# (to co widziałeś po `docker load` i `docker images`)
+# (to co widziałeś po `docker load` i `docker images` na lokalnej maszynie)
 IMAGE_NAME_IN_TAR="mojprojekt/mdoapp:latest" # <--- NAZWA OBRAZU Z PLIKU .TAR TUTAJ
 # Nazwa dla uruchamianego kontenera
 CONTAINER_NAME="mdoapp-kontener" # <--- NAZWA TWOJEGO KONTENERA
 # Mapowanie portów: PORT_HOSTA:PORT_W_KONTENERZE
-HOST_PORT="8080" # <--- PORT NA HOŚCIE (VM)
-CONTAINER_PORT="3000" # <--- PORT WEWNĄTRZ KONTENERA
+HOST_PORT="8080" # <--- PORT NA HOŚCIE (VM), przez który będzie dostęp
+CONTAINER_PORT="3000" # <--- PORT WEWNĄTRZ KONTENERA, na którym nasłuchuje aplikacja
 
 echo ">>> Creating directory for Docker image storage: ${IMAGE_STORAGE_DIR}"
 mkdir -p "${IMAGE_STORAGE_DIR}"
@@ -124,7 +120,7 @@ systemctl enable mdoapp-container.service
 
 # Attempt to start Docker service here in %post. It might not be fully functional
 # until after the first reboot, but the systemd service above will handle the container.
-echo ">>> Attempting to start Docker service in %post (best effort)..."
+echo ">>> Attempting to start Docker service (moby-engine) in %post (best effort)..."
 systemctl start docker.service &
 # Give it a moment (optional, as the systemd service is the primary mechanism)
 sleep 5
