@@ -1,5 +1,5 @@
 # Kickstart File for Fedora 41 Unattended Installation with Docker App from .tar
-# Używa moby-engine z repozytoriów Fedory
+# Używa moby-engine z repozytoriów Fedory i pobiera .tar z GitHub Releases
 
 #version=DEVEL
 
@@ -36,7 +36,8 @@ autopart --type=lvm # Automatic LVM partitioning
 %packages
 @^server-product-environment # Lub @^minimal-environment jeśli wolisz mniej
 moby-engine   # Zamiast docker-ce, pociąga potrzebne zależności jak containerd
-wget          # Nadal potrzebne do pobrania pliku .tar
+curl          # Do pobierania pliku .tar z GitHub Releases
+# wget        # Już niepotrzebne, jeśli używamy curl
 # docker-compose # Jeśli potrzebujesz Docker Compose, dodaj ten pakiet (z repo Fedory)
 %end
 
@@ -45,17 +46,14 @@ wget          # Nadal potrzebne do pobrania pliku .tar
 echo ">>> Starting %post script..."
 
 # --- Docker Setup (using moby-engine from Fedora repos) ---
-# Nie ma potrzeby dodawania repozytorium Docker CE ani ponownej instalacji,
-# ponieważ moby-engine jest instalowany z repozytoriów Fedory w sekcji %packages.
-
 echo ">>> Enabling Docker service (moby-engine) to start on boot..."
-# Nazwa usługi dla moby-engine w Fedorze to zazwyczaj 'docker.service'
 systemctl enable docker.service
 
 # --- Application Deployment from .tar ---
-DOCKER_TAR_FILE="mdoapp-deploy0image-30.tar"
-# !!! ZASTĄP PONIŻSZY ADRES IP I PORT SWOIMI RZECZYWISTYMI WARTOŚCIAMI !!!
-TAR_DOWNLOAD_URL="http://192.168.20.103:8000/${DOCKER_TAR_FILE}" # <--- TWÓJ ADRES IP I PORT TUTAJ
+# Zmień nazwę pliku, jeśli w Twoim Release jest inna
+DOCKER_TAR_FILE="mdoapp-deploy-image-30.tar"
+# Użyj poprawnego linku z Twojego GitHub Release
+TAR_DOWNLOAD_URL="https://github.com/Jankal43/fedora-kickstart/releases/download/v1.0.0-artefact/mdoapp-deploy-image-30.tar"
 LOCAL_TAR_PATH="/opt/docker_images/${DOCKER_TAR_FILE}"
 IMAGE_STORAGE_DIR="/opt/docker_images"
 
@@ -72,16 +70,16 @@ CONTAINER_PORT="3000" # <--- PORT WEWNĄTRZ KONTENERA, na którym nasłuchuje ap
 echo ">>> Creating directory for Docker image storage: ${IMAGE_STORAGE_DIR}"
 mkdir -p "${IMAGE_STORAGE_DIR}"
 
-echo ">>> Downloading Docker image .tar file from ${TAR_DOWNLOAD_URL} to ${LOCAL_TAR_PATH}..."
-wget -q "${TAR_DOWNLOAD_URL}" -O "${LOCAL_TAR_PATH}"
-
-if [ ! -f "${LOCAL_TAR_PATH}" ]; then
-    echo ">>> CRITICAL ERROR: Failed to download ${DOCKER_TAR_FILE} from ${TAR_DOWNLOAD_URL}!"
-    echo ">>> Please check the URL, your local HTTP server, and network connectivity of the VM."
+echo ">>> Downloading Docker image .tar file from ${TAR_DOWNLOAD_URL} to ${LOCAL_TAR_PATH} using curl..."
+# Używamy curl do pobrania pliku
+if ! curl -L -s -f -o "${LOCAL_TAR_PATH}" "${TAR_DOWNLOAD_URL}"; then
+    echo ">>> CRITICAL ERROR: curl failed to download ${DOCKER_TAR_FILE} from ${TAR_DOWNLOAD_URL}!"
+    echo ">>> Please check the URL. Curl exit code: $?"
     exit 1
+else
+    echo ">>> Docker image .tar file downloaded successfully using curl."
+    chmod 644 "${LOCAL_TAR_PATH}"
 fi
-echo ">>> Docker image .tar file downloaded successfully."
-chmod 644 "${LOCAL_TAR_PATH}"
 
 # --- Create systemd service to load image and run container ---
 # This service will run after the system fully boots and Docker service is active.
