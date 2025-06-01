@@ -55,7 +55,7 @@ systemctl enable docker.service
 # --- Application Deployment from .tar ---
 DOCKER_TAR_FILE="mdoapp-deploy0image-30.tar"
 # !!! ZASTĄP PONIŻSZY ADRES IP I PORT SWOIMI RZECZYWISTYMI WARTOŚCIAMI !!!
-TAR_DOWNLOAD_URL="http://192.168.1.10:8000/${DOCKER_TAR_FILE}" # <--- TWÓJ ADRES IP I PORT TUTAJ
+TAR_DOWNLOAD_URL="http://192.168.20.103:8000/${DOCKER_TAR_FILE}" # <--- TWÓJ ADRES IP I PORT TUTAJ
 LOCAL_TAR_PATH="/opt/docker_images/${DOCKER_TAR_FILE}"
 IMAGE_STORAGE_DIR="/opt/docker_images"
 
