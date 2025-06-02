@@ -18,6 +18,10 @@ Zgodnie z poleceniem, utworzono nową maszynę wirtualną, która będzie pełni
 *   **Użytkownik:** Utworzono dedykowanego użytkownika `ansible` na tej maszynie, który będzie wykorzystywany przez Ansible do logowania i wykonywania zadań. Użytkownik ten posiada uprawnienia do wykonywania poleceń z `sudo` bez potrzeby podawania hasła (konfiguracja w pliku `/etc/sudoers.d/ansible` z wpisem `ansible ALL=(ALL) NOPASSWD:ALL`).
 
 
+Po pomyślnej konfiguracji maszyny ansible-target, zgodnie z dobrymi praktykami oraz zaleceniami zadania, wykonano jej migawkę (snapshot). Pozwala to na szybkie przywrócenie stanu maszyny do tego punktu w przypadku ewentualnych problemów podczas dalszych etapów konfiguracji lub testów.
+
+![screen](screenshot/migawka.png)
+
 ### 1.2. Instalacja Ansible na Maszynie Kontrolnej (`ansible-orchestrator`)
 
 Na głównej maszynie wirtualnej, pełniącej rolę orchestratora, zainstalowano oprogramowanie Ansible. Wykorzystano do tego menedżer pakietów `dnf` dostępny w systemie Fedora.
@@ -270,39 +274,237 @@ ansible-playbook -i inventory.ini playbook.yml
 
 W podsumowaniu `PLAY RECAP` dla `ansible-target` widzimy: `ok=7`, `changed=3`, `unreachable=0`, `failed=0`, `skipped=0`, `rescued=0`, `ignored=1`. Oznacza to, że 3 zadania dokonały zmian w systemie, a jedno zadanie, mimo błędu, zostało zignorowane i nie przerwało całości.
 
-### 3.3. Weryfikacja Działania i Idempotentność
 
-Zgodnie z poleceniem, aby zaobserwować idempotentność, można by ponownie uruchomić ten sam playbook:
+Oczywiście, dostosuję ten fragment, aby pasował stylistycznie i merytorycznie do reszty Twojego sprawozdania, zachowując formalny i techniczny ton.
+
+---
+
+### 3.3. Testowanie Odporności Ansible na Problemy z Łącznością
+
+Istotnym elementem oceny narzędzi do automatyzacji jest ich zdolność do obsługi sytuacji awaryjnych, takich jak utrata łączności z zarządzanymi systemami. W ramach ćwiczenia przeprowadzono test mający na celu weryfikację zachowania Ansible w przypadku, gdy maszyna docelowa (`ansible-target`) staje się nieosiągalna poprzez protokół SSH.
+
+
+W celu przeprowadzenia kontrolowanego testu, na maszynie `ansible-target` celowo zatrzymano usługę serwera OpenSSH. Operacja ta została wykonana przed ponownym uruchomieniem playbooka z maszyny `ansible-orchestrator`.
+
+Na maszynie `ansible-target`:
+```bash
+sudo systemctl stop sshd
+```
+Zatrzymanie usługi `sshd` spowodowało, że maszyna `ansible-target` przestała akceptować nowe połączenia SSH na porcie 22, symulując tym samym jej niedostępność dla Ansible.
+
+Próba Wykonania Playbooka na Niedostępnym Hoście
+
+Po wyłączeniu serwera SSH na maszynie `ansible-target`, z poziomu maszyny `ansible-orchestrator` podjęto próbę wykonania wcześniej zdefiniowanego playbooka `playbook.yml` za pomocą polecenia:
+
 ```bash
 ansible-playbook -i inventory.ini playbook.yml
 ```
-Przy drugim uruchomieniu (zakładając, że plik `inventory.ini` na orchestratorze nie uległ zmianie i pakiety są już aktualne) oczekiwalibyśmy, że zadania "Skopiuj plik inwentaryzacji" oraz "Aktualizuj pakiety (dnf)" zgłoszą status `ok` (zamiast `changed`), ponieważ Ansible wykryje, że pożądany stan jest już osiągnięty. Restart usług (jak `sshd`) zazwyczaj zawsze będzie raportowany jako `changed` przez moduł `service` ze stanem `restarted`, chyba że użyto by bardziej zaawansowanej logiki z handlerami i warunkami.
 
-### 3.4. Operacje Względem Maszyny z Problemami
+Wynik tej operacji, przedstawiony na zrzucie ekranu poniżej, unaocznił reakcję Ansible na brak możliwości nawiązania połączenia z hostem docelowym.
 
-Zadanie wspomina o "przeprowadzeniu operacji względem maszyny z wyłączonym serwerem SSH, odpiętą kartą sieciową".
-Gdyby serwer SSH na `ansible-target` był wyłączony lub maszyna byłaby niedostępna sieciowo, Ansible podczas próby wykonania playbooka zgłosiłby błąd `unreachable` dla tej maszyny już na etapie "Gathering Facts" lub przy pierwszym zadaniu wymagającym połączenia.
 
-Przykład komunikatu błędu dla hosta nieosiągalnego:
+![screen](screenshot/s13.png)
+
+**Analiza wyniku:**
+Jak zaobserwowano na przedstawionym zrzucie ekranu, Ansible już na etapie początkowego zadania `TASK [Gathering Facts]` napotkał krytyczny problem z komunikacją z hostem `ansible-target`. System zgłosił następujący błąd:
+
 ```
-fatal: [ansible-target]: UNREACHABLE! => {"changed": false, "msg": "Failed to connect to the host via ssh: ssh: connect to host ansible-target port 22: No route to host", "unreachable": true}
+fatal: [ansible-target]: UNREACHABLE! => {
+    "changed": false,
+    "msg": "Failed to connect to the host via ssh: ssh: connect to host ansible-target port 22: Connection timed out",
+    "unreachable": true
+}
 ```
-Playbook nie kontynuowałby dalszych zadań dla takiego hosta.
+
+Komunikat `Failed to connect to the host via ssh: ssh: connect to host ansible-target port 22: Connection timed out` jednoznacznie wskazuje, że próba nawiązania sesji SSH z maszyną `ansible-target` zakończyła się niepowodzeniem z powodu przekroczenia limitu czasu oczekiwania na odpowiedź. W rezultacie, host `ansible-target` został sklasyfikowany przez Ansible jako `UNREACHABLE`.
+
+Podsumowanie wykonania playbooka (`PLAY RECAP`) precyzyjnie odzwierciedliło zaistniałą sytuację:
+```
+PLAY RECAP *********************************************************************
+ansible-target             : ok=0    changed=0    unreachable=1    failed=0    skipped=0    rescued=0    ignored=0
+```
+Potwierdza to, że żadne zadania nie zostały pomyślnie wykonane na hoście `ansible-target`, a jego stan został poprawnie zidentyfikowany jako nieosiągalny.
+
+**Wnioski z przeprowadzonego testu:**
+Przeprowadzony scenariusz wykazał, że Ansible jest wyposażony w mechanizmy pozwalające na detekcję i odpowiednie raportowanie problemów związanych z brakiem łączności SSH do zarządzanych węzłów. Zdolność do identyfikacji hostów jako `UNREACHABLE` jest kluczowa dla administratorów systemów, umożliwiając szybkie zdiagnozowanie problemów w infrastrukturze i podjęcie stosownych działań naprawczych. Test ten potwierdza robustność Ansible w kontekście obsługi błędów komunikacyjnych.
 
 ---
-Teraz przejdziemy do **Części 4: Zarządzanie Stworzonym Artefaktem**.
-Zakładam, że artefaktem z poprzednich zajęć był obraz Docker (`mdoapp-deploy:latest`), który był zapisywany jako plik `.tar`. Będziemy potrzebowali tego pliku `.tar` na maszynie `ansible-orchestrator`, aby go przesłać i załadować na `ansible-target`.
 
-Potrzebuję informacji:
-1.  Czy masz plik `.tar` z obrazem Docker z poprzedniego zadania dostępny na `ansible-orchestrator`? Jeśli tak, podaj jego nazwę (np. `mdoapp-deploy-image-1.tar`).
-2.  Potrzebne będą screeny:
-    *   Zawartość nowego playbooka (`manage_artifact.yml` lub podobnie).
-    *   Wynik uruchomienia tego playbooka.
-    *   Screen weryfikujący, że Docker został zainstalowany na `ansible-target` (np. `ansible ansible-target -m shell -a "docker --version" --become`).
-    *   Screen pokazujący, że obraz został załadowany na `ansible-target` (np. `ansible ansible-target -m shell -a "docker images"`).
-    *   Screen pokazujący uruchomiony kontener (np. `ansible ansible-target -m shell -a "docker ps"`).
-    *   Screen z `curl` do aplikacji działającej w kontenerze na `ansible-target`.
-    *   Screen pokazujący zatrzymanie i usunięcie kontenera.
 
-Daj znać, jakie masz materiały, a ja przygotuję odpowiednią sekcję.
+
+
+Oczywiście, oto propozycja kontynuacji sprawozdania, uwzględniająca zadanie dotyczące plików odpowiedzi Kickstart, dostarczone pliki oraz zrzuty ekranu. Założę, że pierwszy plik Kickstart to wersja początkowa/bazowa, a drugi to wersja rozszerzona o deployment aplikacji.
+
+---
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## Część 4: Automatyzacja Wdrożenia Systemu i Aplikacji za Pomocą Plików Odpowiedzi Kickstart
+
+Kolejnym etapem projektu było zautomatyzowanie procesu instalacji systemu operacyjnego Fedora wraz z niezbędnym oprogramowaniem oraz wdrożeniem aplikacji kontenerowej, przygotowanej w ramach wcześniejszych zadań. Wykorzystano do tego mechanizm plików odpowiedzi Kickstart, umożliwiający nienadzorowaną instalację systemu.
+
+### 4.1. Przygotowanie Bazowego Pliku Odpowiedzi Kickstart
+
+Prace rozpoczęto od przygotowania podstawowego pliku odpowiedzi Kickstart. Punktem wyjścia mógł być plik `/root/anaconda-ks.cfg` generowany automatycznie po standardowej instalacji systemu Fedora, który następnie został zmodyfikowany w celu spełnienia podstawowych wymagań zadania:
+
+*   **Zdefiniowano źródła instalacji (repozytoria):** Dodano dyrektywy `url` i `repo` wskazujące na oficjalne mirrory Fedory 41, co jest kluczowe przy korzystaniu z instalatora sieciowego (Netinstall) lub gdy wybrana grupa pakietów nie znajduje się w całości na nośniku instalacyjnym.
+*   **Skonfigurowano układ klawiatury i język systemu:** Ustawiono polski układ klawiatury oraz język systemu `pl_PL.UTF-8`.
+*   **Ustawiono informacje sieciowe:** Skonfigurowano interfejs sieciowy do pracy w trybie DHCP oraz zdefiniowano niestandardowy hostname dla maszyny.
+*   **Zarządzanie partycjami:** Zapewniono, że dysk docelowy (`sda`) będzie w całości formatowany przed instalacją poprzez użycie `clearpart --all --initlabel`, a następnie zastosowano automatyczne partycjonowanie LVM (`autopart --type=lvm`).
+*   **Zainstalowano podstawową grupę pakietów:** Wybrano grupę pakietów `@^server-product-environment` (lub alternatywnie `@^minimal-environment` dla bardziej oszczędnej instalacji), która dostarcza środowisko serwerowe.
+*   **Skonfigurowano dane użytkownika i hasło root:** Zdefiniowano zaszyfrowane hasło dla użytkownika root oraz utworzono użytkownika `kaletka` z uprawnieniami `wheel` i zadanym hasłem.
+*   **Ustawiono strefę czasową:** Wybrano `Europe/Warsaw`.
+
+Przykładowa bazowa konfiguracja pliku Kickstart (fragment):
+```kickstart
+# Kickstart File for Fedora 41 Unattended Installation
+#version=DEVEL
+
+# Installation source for Fedora 41
+url --mirrorlist=http://mirrors.fedoraproject.org/mirrorlist?repo=fedora-41&arch=x86_64
+repo --name=updates --mirrorlist=http://mirrors.fedoraproject.org/mirrorlist?repo=updates-released-f41&arch=x86_64
+
+# Network information
+network --bootproto=dhcp --device=link --activate --onboot=on
+network --hostname=fedora-mdoapp-server
+
+# Partitioning
+clearpart --all --initlabel
+autopart --type=lvm
+
+# Packages to install
+%packages
+@^server-product-environment
+%end
+# ... (reszta konfiguracji języka, użytkowników, strefy czasowej itp.)
+```
+
+### 4.2. Rozszerzenie Pliku Odpowiedzi o Wdrożenie Aplikacji Kontenerowej
+
+Następnie bazowy plik Kickstart został rozszerzony o mechanizmy niezbędne do pobrania i uruchomienia aplikacji kontenerowej, która była artefaktem z poprzednich etapów projektu.
+
+**Zmiany i dodatki w pliku Kickstart:**
+
+*   **Instalacja dodatkowego oprogramowania (`%packages`):**
+    *   Do listy pakietów dodano `moby-engine` (implementacja silnika Docker dostępna w repozytoriach Fedory) wraz z jego zależnościami (jak `containerd`).
+    *   Dodano `curl` jako narzędzie do pobierania artefaktu aplikacji (obrazu Docker w formacie `.tar`) z repozytorium GitHub Releases.
+*   **Sekcja `%post` - skrypty poinstalacyjne:**
+    *   **Konfiguracja Dockera:** Włączono usługę `docker.service` (`moby-engine`) do automatycznego startu przy uruchomieniu systemu (`systemctl enable docker.service`).
+    *   **Pobieranie artefaktu:** Zdefiniowano zmienne przechowujące URL do pliku `.tar` na GitHub Releases oraz lokalną ścieżkę zapisu. Użyto `curl` do pobrania pliku, z podstawową obsługą błędów.
+    *   **Tworzenie usługi systemd dla aplikacji:** Najważniejszym elementem sekcji `%post` było dynamiczne utworzenie pliku usługi systemd (np. `/etc/systemd/system/mdoapp-container.service`). Ta usługa została zaprojektowana tak, aby uruchomić się po pełnym starcie systemu i usługi Docker (`After=docker.service network-online.target`). Zadania tej usługi to:
+        1.  `ExecStartPre`: Załadowanie obrazu Docker z pobranego pliku `.tar` (`docker load -i /opt/docker_images/mdoapp-deploy-image-30.tar`). Wyjście tego polecenia jest logowane do pliku w celu ułatwienia diagnostyki.
+        2.  `ExecStartPre`: Zatrzymanie i usunięcie ewentualnie istniejącego kontenera o tej samej nazwie (zapewnienie czystego startu).
+        3.  `ExecStart`: Uruchomienie nowego kontenera w trybie detached (`-d`) z zadaną nazwą, mapowaniem portów (np. `8080:3000`) oraz na bazie załadowanego obrazu (`mdoapp-deploy:latest`).
+    *   **Aktywacja usługi aplikacji:** Po utworzeniu pliku usługi, wykonano `systemctl daemon-reload` oraz `systemctl enable mdoapp-container.service`, aby usługa była zarządzana przez systemd i uruchamiana automatycznie.
+    *   Podjęto próbę uruchomienia usługi Docker (`systemctl start docker.service &`) jeszcze w sekcji `%post`, jednak główny mechanizm startu kontenera opiera się na dedykowanej usłudze systemd po restarcie.
+*   **Automatyczny restart:** Na końcu pliku Kickstart dodano dyrektywę `reboot`, aby maszyna automatycznie uruchomiła się ponownie po zakończeniu instalacji.
+
+Pełny, rozszerzony plik Kickstart został przygotowany w repozytorium projektu.
+
+### 4.3. Przeprowadzenie Instalacji Nienadzorowanej
+
+Instalacja nienadzorowana została przeprowadzona na nowej maszynie wirtualnej (VirtualBox) przy użyciu nośnika instalacyjnego Fedora Server Netinstall ISO. Kluczowym krokiem było wskazanie instalatorowi Anaconda przygotowanego pliku odpowiedzi. Odbyło się to poprzez modyfikację parametrów startowych jądra w menu GRUB podczas uruchamiania z płyty ISO. Dodano parametr `inst.ks=` wskazujący na URL pliku Kickstart hostowanego na GitHub:
+
+```
+inst.ks=https://raw.githubusercontent.com/Jankal43/fedora-kickstart/refs/heads/main/my-kickstartt.ks
+```
+
+![screen](kickstart.png)
+
+Po uruchomieniu instalatora z tak zmodyfikowanymi parametrami, proces instalacji przebiegł całkowicie automatycznie, bez potrzeby interakcji użytkownika.
+
+![screen](result.png)
+
+### 4.4. Weryfikacja Poinstalacyjna
+
+Po automatycznym restarcie systemu, zalogowano się na nowo zainstalowaną maszynę jako użytkownik `kaletka` i przeprowadzono weryfikację poprawności działania:
+
+1.  **Sprawdzenie logu skryptu `%post`**:
+    ```bash
+    sudo cat /root/ks-post.log
+    ```
+    Log potwierdził pomyślne wykonanie wszystkich kroków zdefiniowanych w sekcji `%post`, w tym pobranie pliku `.tar`.
+
+![screen](s15.png)
+   
+2.  **Sprawdzenie statusu usługi Docker (`moby-engine`)**:
+    ```bash
+    systemctl status docker.service
+    ```
+    Usługa była aktywna (`active (running)`), co potwierdziło jej poprawne uruchomienie.
+
+
+3.  **Sprawdzenie statusu usługi aplikacji (`mdoapp-container.service`)**:
+    ```bash
+    systemctl status mdoapp-container.service
+    ```
+    Usługa zakończyła swoje jednorazowe zadania (`active (exited)`) pomyślnie, co wskazywało na poprawne załadowanie obrazu i uruchomienie kontenera. Komunikaty "Error response from daemon: No such container" dla `docker stop` i `docker rm` w logach usługi są oczekiwane przy pierwszym uruchomieniu i nie stanowią błędu.
+
+      ![screen](s16.png)
+
+4.  **Sprawdzenie logu ładowania obrazu Docker**:
+    ```bash
+    sudo cat /var/log/mdoapp_docker_load.log
+    ```
+    Log potwierdził pomyślne załadowanie obrazu `mdoapp-deploy:latest`.
+
+
+
+5.  **Weryfikacja obrazów i kontenerów Docker**:
+    ```bash
+    sudo docker images
+    sudo docker ps
+    ```
+    Polecenia te potwierdziły obecność załadowanego obrazu oraz działający kontener `mdoapp-kontener` z poprawnie zmapowanymi portami.
+
+  ![screen](s18.png)
+  
+6.  **Sprawdzenie logów kontenera aplikacji**:
+    ```bash
+    sudo docker logs mdoapp-kontener
+    ```
+    Logi wskazywały na pomyślne uruchomienie aplikacji wewnątrz kontenera.
+
+
+### 4.5. Wnioski
+
+Wykorzystanie plików odpowiedzi Kickstart pozwoliło na pełną automatyzację procesu instalacji systemu operacyjnego Fedora oraz przygotowanie środowiska do uruchomienia aplikacji kontenerowej. Zastosowanie sekcji `%post` umożliwiło wdrożenie logiki pobierania artefaktu oraz konfiguracji usług systemd odpowiedzialnych za zarządzanie cyklem życia kontenera aplikacji. Cele zadania związane z automatyzacją instalacji i konfiguracji systemu zostały osiągnięte. Rozwiązanie to znacząco skraca czas potrzebny na przygotowanie nowych instancji systemu i zapewnia powtarzalność wdrożeń.
+
+---
+
+
+
+
+
+
+
+
 
