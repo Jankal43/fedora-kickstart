@@ -13,7 +13,7 @@ lang pl_PL.UTF-8
 
 # Network information
 network --bootproto=dhcp --device=link --activate --onboot=on # Dodane dla aktywacji sieci
-network --hostname=moj-nowy-host # <<< ZMIEŃ NA ŻĄDANY HOSTNAME
+network --hostname=kaletka # <<< ZMIEŃ NA ŻĄDANY HOSTNAME
 
 %packages
 @^custom-environment
