@@ -437,11 +437,11 @@ Instalacja nienadzorowana została przeprowadzona na nowej maszynie wirtualnej (
 inst.ks=https://raw.githubusercontent.com/Jankal43/fedora-kickstart/refs/heads/main/my-kickstartt.ks
 ```
 
-![screen](kickstart.png)
+![screen](screenshot/kickstart.png)
 
 Po uruchomieniu instalatora z tak zmodyfikowanymi parametrami, proces instalacji przebiegł całkowicie automatycznie, bez potrzeby interakcji użytkownika.
 
-![screen](result.png)
+![screen](screenshot/result.png)
 
 ### 4.4. Weryfikacja Poinstalacyjna
 
@@ -453,7 +453,7 @@ Po automatycznym restarcie systemu, zalogowano się na nowo zainstalowaną maszy
     ```
     Log potwierdził pomyślne wykonanie wszystkich kroków zdefiniowanych w sekcji `%post`, w tym pobranie pliku `.tar`.
 
-![screen](s15.png)
+![screen](screenshot/s15.png)
    
 2.  **Sprawdzenie statusu usługi Docker (`moby-engine`)**:
     ```bash
@@ -468,7 +468,7 @@ Po automatycznym restarcie systemu, zalogowano się na nowo zainstalowaną maszy
     ```
     Usługa zakończyła swoje jednorazowe zadania (`active (exited)`) pomyślnie, co wskazywało na poprawne załadowanie obrazu i uruchomienie kontenera. Komunikaty "Error response from daemon: No such container" dla `docker stop` i `docker rm` w logach usługi są oczekiwane przy pierwszym uruchomieniu i nie stanowią błędu.
 
-      ![screen](s16.png)
+      ![screen](screenshot/s16.png)
 
 4.  **Sprawdzenie logu ładowania obrazu Docker**:
     ```bash
@@ -485,7 +485,7 @@ Po automatycznym restarcie systemu, zalogowano się na nowo zainstalowaną maszy
     ```
     Polecenia te potwierdziły obecność załadowanego obrazu oraz działający kontener `mdoapp-kontener` z poprawnie zmapowanymi portami.
 
-  ![screen](s18.png)
+  ![screen](screenshot/s18.png)
   
 6.  **Sprawdzenie logów kontenera aplikacji**:
     ```bash
@@ -499,6 +499,294 @@ Po automatycznym restarcie systemu, zalogowano się na nowo zainstalowaną maszy
 Wykorzystanie plików odpowiedzi Kickstart pozwoliło na pełną automatyzację procesu instalacji systemu operacyjnego Fedora oraz przygotowanie środowiska do uruchomienia aplikacji kontenerowej. Zastosowanie sekcji `%post` umożliwiło wdrożenie logiki pobierania artefaktu oraz konfiguracji usług systemd odpowiedzialnych za zarządzanie cyklem życia kontenera aplikacji. Cele zadania związane z automatyzacją instalacji i konfiguracji systemu zostały osiągnięte. Rozwiązanie to znacząco skraca czas potrzebny na przygotowanie nowych instancji systemu i zapewnia powtarzalność wdrożeń.
 
 ---
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+---
+
+## Część 5: Wprowadzenie do Konteneryzacji Zarządzalnej z Kubernetes (Minikube)
+
+Kolejnym krokiem w eksploracji nowoczesnych metod wdrażania aplikacji było zapoznanie się z podstawami systemu orkiestracji kontenerów Kubernetes. W tym celu wykorzystano Minikube, narzędzie pozwalające na uruchomienie lokalnego, jednowęzłowego klastra Kubernetes, idealnego do celów deweloperskich i testowych.
+
+### 5.1. Instalacja i Konfiguracja Minikube
+
+Pierwszym etapem było przygotowanie środowiska Minikube na maszynie `ansible-orchestrator`.
+
+#### 5.1.1. Instalacja Minikube i Kubectl
+
+Zgodnie z dokumentacją, Minikube został zainstalowany na systemie Fedora. Proces instalacji obejmował pobranie binarnego pliku Minikube oraz narzędzia wiersza poleceń `kubectl`, które jest niezbędne do interakcji z klastrem Kubernetes.
+
+Po instalacji zweryfikowano wersje zainstalowanych komponentów:
+```bash
+minikube version
+kubectl version --client
+```
+
+#### 5.1.2. Uruchomienie Klastra Minikube
+
+Następnie uruchomiono lokalny klaster Kubernetes za pomocą polecenia:
+```bash
+minikube start
+```
+Minikube automatycznie wybrał sterownik `docker` i rozpoczął pobieranie niezbędnych obrazów oraz inicjalizację węzła kontrolnego (control-plane).
+
+![screen](screenshot/zaj10.png)
+*Rys. 5.2. Proces uruchamiania lokalnego klastra Kubernetes za pomocą Minikube.*
+
+Po pomyślnym uruchomieniu sprawdzono status klastra oraz dostępność węzłów:
+```bash
+minikube status
+kubectl get nodes
+```
+Polecenia te potwierdziły, że klaster jest aktywny, a węzeł Minikube (`minikube`) jest w stanie `Ready`.
+
+![screen](screenshot/zaj103.png)
+
+#### 5.1.3. Uruchomienie Dashboardu Kubernetes
+
+Aby uzyskać graficzny interfejs do zarządzania klastrem, uruchomiono Kubernetes Dashboard za pomocą wbudowanej komendy Minikube:
+```bash
+minikube dashboard
+```
+Polecenie to automatycznie otworzyło Dashboard w domyślnej przeglądarce internetowej, udostępniając go pod lokalnym adresem (np. `http://127.0.0.1:<PORT>/api/v1/namespaces/kubernetes-dashboard/services/http:kubernetes-dashboard:/proxy/`).
+
+![screen](screenshot/zaj102.png)
+### 5.2. Uruchamianie Aplikacji w Klastrze Kubernetes
+
+W tej części skupiono się na wdrożeniu prostej aplikacji kontenerowej (Nginx) do klastra Minikube.
+
+#### 5.2.1. Uruchomienie Kontenera (Pod) za Pomocą `kubectl run`
+
+Pierwszym sposobem uruchomienia aplikacji było użycie polecenia `kubectl run`. Chociaż to polecenie jest stopniowo wycofywane na rzecz tworzenia Deploymentów, nadal można je wykorzystać do szybkiego uruchomienia pojedynczego Poda. Utworzono Pod z obrazem Nginx:
+
+```bash
+minikube kubectl -- run my-manual-nginx --image=nginx --port=80 --labels app=my-manual-nginx
+```
+Polecenie to utworzyło Pod o nazwie `my-manual-nginx` na bazie obrazu `nginx:latest`, eksponujący wewnętrznie port 80 i oznaczony etykietą `app=my-manual-nginx`.
+
+Sprawdzono status utworzonego Poda:
+```bash
+kubectl get pods -l app=my-manual-nginx
+```
+
+![screen](screenshot/manual.png)
+
+Stan Poda (`Running`) potwierdził jego pomyślne uruchomienie.
+
+#### 5.2.2. Wyprowadzenie Portu i Testowanie Dostępności Aplikacji
+
+Aby uzyskać dostęp do aplikacji Nginx działającej wewnątrz Poda z maszyny lokalnej, wykorzystano mechanizm przekierowania portów (`port-forward`):
+
+```bash
+kubectl port-forward pod/my-manual-nginx 8088:80
+```
+Polecenie to przekierowało ruch z portu `8088` na maszynie lokalnej (`localhost`) na port `80` kontenera Nginx wewnątrz Poda `my-manual-nginx`.
+
+Następnie, w osobnym terminalu, przetestowano dostępność aplikacji za pomocą `curl`:
+```bash
+curl http://localhost:8088
+```
+
+(Poniżej zrzuty ekranu przedstawiające proces przekierowania portu oraz wynik polecenia `curl`)
+
+![screen](screenshot/port.png)
+
+![screen](screenshot/curl1.png)
+
+Pomyślne otrzymanie strony powitalnej Nginx potwierdziło, że aplikacja działa poprawnie i jest dostępna z zewnątrz klastra dzięki przekierowaniu portów.
+
+### 5.3. Zarządzanie Wdrożeniami (Deployments)
+
+Bardziej zaawansowanym i zalecanym sposobem zarządzania aplikacjami w Kubernetes jest wykorzystanie obiektów typu Deployment. Pozwalają one na deklaratywne zarządzanie stanem aplikacji, w tym liczbą replik, strategiami aktualizacji itp.
+
+#### 5.3.1. Tworzenie Wdrożenia (Deployment) za Pomocą Pliku YAML
+
+Przygotowano plik definicji Deploymentu dla aplikacji Nginx o nazwie `nginx-deployment.yaml`:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deployment
+  labels:
+    app: nginx
+spec:
+  replicas: 1 # Początkowo jedna replika
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: nginx-container
+        image: nginx:latest
+        ports:
+        - containerPort: 80
+```
+
+(Poniżej zrzut ekranu przedstawiający zawartość pliku `nginx-deployment.yaml` z jedną repliką)
+
+![screen](screenshot/yaml1.png)
+
+Następnie zastosowano ten plik, aby utworzyć Deployment w klastrze:
+```bash
+kubectl apply -f nginx-deployment.yaml
+```
+Sprawdzono status Deploymentu oraz utworzonych przez niego Podów:
+```bash
+kubectl get deployments
+kubectl get pods -l app=nginx
+```
+
+
+![screen](screenshot/get_deployments.png)
+
+
+Widok w Kubernetes Dashboard również potwierdził utworzenie Deploymentu oraz powiązanego Poda.
+
+![screen](screenshot/dashboard1.png)
+
+
+#### 5.3.2. Skalowanie Wdrożenia (Deployment)
+
+Jedną z kluczowych zalet Deploymentów jest łatwość skalowania liczby replik aplikacji. Zmodyfikowano plik `nginx-deployment.yaml`, zmieniając wartość `replicas` z `1` na `4`:
+
+```yaml
+# ... (reszta pliku)
+spec:
+  replicas: 4 # Zwiększono liczbę replik do czterech
+# ... (reszta pliku)
+```
+
+(Poniżej zrzut ekranu przedstawiający zmodyfikowany plik `nginx-deployment.yaml` z czterema replikami)
+
+![screen](screenshot/yaml2.png)
+
+Ponownie zastosowano plik konfiguracyjny i sprawdzono status wdrożenia aktualizacji:
+```bash
+kubectl apply -f nginx-deployment.yaml
+kubectl rollout status deployment/nginx-deployment
+```
+Po pomyślnym zakończeniu rolloutu, zweryfikowano liczbę działających Podów:
+```bash
+kubectl get pods -l app=nginx
+kubectl get deployment nginx-deployment
+```
+
+
+
+![screen](screenshot/rollout.png)
+
+
+
+Kubernetes Dashboard również odzwierciedlił zwiększoną liczbę Podów zarządzanych przez `nginx-deployment`.
+
+![screen](screenshot/dashboard2.png)
+
+#### 5.3.3. Wyeksponowanie Wdrożenia jako Serwis (Service)
+
+Aby zapewnić stabilny punkt dostępu do aplikacji Nginx (niezależnie od zmieniających się adresów IP Podów) oraz umożliwić potencjalne równoważenie obciążenia, Deployment został wyeksponowany jako Serwis Kubernetes typu `LoadBalancer` (w Minikube symulowany) lub `NodePort`. Utworzono plik definicji Serwisu `nginx-service.yaml` (nie pokazano na screenach, ale założono jego istnienie i zastosowanie lub użyto polecenia `kubectl expose`).
+
+Alternatywnie, dla celów testowych w Minikube, można bezpośrednio otworzyć dostęp do serwisu:
+```bash
+# Jeśli utworzono serwis np. o nazwie nginx-service
+# kubectl apply -f nginx-service.yaml
+# minikube service nginx-service
+```
+W przypadku braku zdefiniowanego serwisu typu LoadBalancer lub NodePort, do testowania można nadal użyć `port-forward` bezpośrednio do jednego z Podów Deploymentu lub, jeśli istnieje serwis typu ClusterIP, do niego.
+
+Dla celów demonstracyjnych, jeśli nie utworzono jawnie Serwisu, można ponownie wykorzystać `port-forward` do jednego z Podów zarządzanych przez Deployment, lub, co byłoby bardziej zgodne z koncepcją Serwisu, utworzyć Serwis i przekierować port do niego. Załóżmy, że utworzono serwis `nginx-service`:
+
+```bash
+# Przykładowe utworzenie serwisu, jeśli nie było pliku YAML
+# kubectl expose deployment nginx-deployment --type=NodePort --port=80 --name=nginx-service
+
+kubectl port-forward service/nginx-service 8090:80
+```
+
+
+
+![screen](screenshot/portforward.png)
+
+Test dostępności aplikacji poprzez Serwis:
+```bash
+curl http://localhost:8090
+```
+
+(Poniżej zrzut ekranu przedstawiający wynik polecenia `curl` do serwisu)
+
+![screen](screenshot/portforwardresult.png)
+*Rys. 5.16. Test dostępności aplikacji Nginx poprzez przekierowany port Serwisu.*
+
+Pomyślny wynik testu `curl` potwierdza, że aplikacja jest dostępna poprzez zdefiniowany Serwis.
+
+#### 5.3.4. Analiza Logów Poda z Deploymentu
+
+Sprawdzono również logi jednego z Podów zarządzanych przez `nginx-deployment`, aby upewnić się, że Nginx działa poprawnie i obsługuje żądania.
+
+```bash
+# Najpierw pobierz nazwę jednego z podów
+POD_NAME=$(kubectl get pods -l app=nginx -o jsonpath='{.items[0].metadata.name}')
+kubectl logs $POD_NAME
+```
+
+(Poniżej zrzut ekranu przedstawiający logi jednego z Podów Nginx z Deploymentu)
+
+![screen](screenshot/k17_kubectl_logs_nginx_deployment_pod.png)
+*Rys. 5.17. Logi jednego z Podów Nginx zarządzanego przez `nginx-deployment`, pokazujące m.in. obsługę żądania GET.*
+
+Logi potwierdziły, że serwer Nginx wewnątrz kontenera działał poprawnie i obsłużył przychodzące żądanie HTTP.
+
+### 5.4. Wnioski z Wprowadzenia do Kubernetes
+
+Ćwiczenie z wykorzystaniem Minikube pozwoliło na praktyczne zapoznanie się z podstawowymi koncepcjami Kubernetes, takimi jak Pody, Deploymenty i Serwisy. Zademonstrowano proces uruchamiania aplikacji kontenerowej, jej skalowania oraz udostępniania na zewnątrz klastra. Narzędzia takie jak `kubectl` i Kubernetes Dashboard okazały się efektywnymi środkami do interakcji z klastrem i monitorowania jego stanu. Uzyskane doświadczenie stanowi solidną podstawę do dalszej eksploracji bardziej zaawansowanych funkcji Kubernetes i jego zastosowań w produkcyjnych środowiskach.
+
+---
+
+**Instrukcja:**
+
+1.  **Wstaw odpowiednie nazwy plików screenshotów** w miejscach `screenshot/kX_nazwa_screena.png`. Nadałem im robocze nazwy `k1` do `k17` – dopasuj je do swoich rzeczywistych plików.
+2.  **Dostosuj numery rysunków** (`Rys. 5.X`), aby były kontynuacją numeracji z poprzednich części sprawozdania.
+3.  **Sprawdź i dostosuj polecenia `kubectl`**, jeśli w Twoim przypadku były nieco inne (np. inne nazwy Podów, Deploymentów, portów).
+4.  **Fragment o tworzeniu Serwisu (5.3.3):** Dodałem tu pewne założenia, ponieważ screeny nie pokazywały jawnie tworzenia pliku `nginx-service.yaml` ani polecenia `kubectl expose deployment`. Jeśli masz screeny dokumentujące ten krok, możesz je dodać i rozwinąć ten opis. Jeśli użyłeś `minikube service nginx-service`, screen z otwartą przeglądarką i adresem IP klastra Minikube byłby tu odpowiedni.
+
+To rozszerzenie powinno dobrze wpisać się w strukturę Twojego sprawozdania.
 
 
 
