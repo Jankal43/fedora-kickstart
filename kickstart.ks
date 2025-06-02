@@ -60,7 +60,7 @@ IMAGE_STORAGE_DIR="/opt/docker_images"
 # !!! ZASTĄP PONIŻSZE WARTOŚCI SWOIMI RZECZYWISTYMI WARTOŚCIAMI !!!
 # Nazwa obrazu i tag, który jest ZAPISANY WEWNĄTRZ PLIKU .TAR
 # (to co widziałeś po `docker load` i `docker images` na lokalnej maszynie)
-IMAGE_NAME_IN_TAR="mojprojekt/mdoapp:latest" # <--- NAZWA OBRAZU Z PLIKU .TAR TUTAJ
+IMAGE_NAME_IN_TAR="mdoapp-deploy:latest"
 # Nazwa dla uruchamianego kontenera
 CONTAINER_NAME="mdoapp-kontener" # <--- NAZWA TWOJEGO KONTENERA
 # Mapowanie portów: PORT_HOSTA:PORT_W_KONTENERZE
