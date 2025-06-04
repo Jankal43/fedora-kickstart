@@ -796,3 +796,169 @@ To rozszerzenie powinno dobrze wpisać się w strukturę Twojego sprawozdania.
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## Część 6: Zaawansowane Zarządzanie Wdrożeniami w Kubernetes (Zajęcia 11)
+
+Kontynuując pracę z lokalnym klastrem Kubernetes (Minikube) rozpoczętą w poprzedniej części, niniejszy etap skupiał się na bardziej zaawansowanych aspektach zarządzania cyklem życia aplikacji kontenerowej. Celem było praktyczne przećwiczenie obsługi różnych wersji obrazów Docker, w tym wdrażania aktualizacji, przywracania poprzednich wersji (rollback) oraz zrozumienia i zastosowania różnych strategii wdrażania. Dodatkowo, opracowano skrypt do automatycznej weryfikacji stanu wdrożenia.
+
+### 6.1. Przygotowanie Różnych Wersji Obrazu Aplikacji `mdoapp`
+
+Aby umożliwić testowanie aktualizacji i wycofywania zmian, przygotowano trzy warianty obrazu aplikacji `mdoapp`, bazując na istniejącym obrazie `mdoapp-deploy:latest` (ID: `3770f68c0698`):
+
+1.  **`mdoapp:1.0` (Wersja Stabilna):** Utworzona przez otagowanie istniejącego, działającego obrazu `mdoapp-deploy:latest`.
+    ```bash
+    docker tag mdoapp-deploy:latest mdoapp:1.0
+    minikube image load mdoapp:1.0
+    ```
+    Dostępność obrazu w Minikube zweryfikowano poleceniem `kubectl run test-mdoapp1 --image=mdoapp:1.0 --image-pull-policy=Never --dry-run=client ...`, które zakończyło się sukcesem.
+
+2.  **`mdoapp:2.0` (Wersja Nowsza):** Stworzona na bazie `mdoapp:1.0` poprzez dodanie pliku `/app_version.txt` z informacją o wersji. Użyto do tego dedykowanego pliku `Dockerfile.v2`:
+    ```dockerfile
+    # Dockerfile.v2
+    FROM mdoapp:1.0
+    RUN echo "To jest wersja 2.0 aplikacji mdoapp" > /app_version.txt
+    ```
+    Następnie obraz zbudowano i załadowano do Minikube:
+    ```bash
+    docker build -t mdoapp:2.0 -f Dockerfile.v2 .
+    minikube image load mdoapp:2.0
+    ```
+
+![screen](screenshot/zaj11_1.png)
+![screen](screenshot/zaj11_2.png)
+
+4.  **`mdoapp:faulty` (Wersja Wadliwa):** Stworzona na bazie `mdoapp:1.0` przez nadpisanie komendy startowej (`CMD`) na nieistniejący skrypt, co miało na celu symulację błędnego wdrożenia. Użyto pliku `Dockerfile.faulty`:
+    ```dockerfile
+    # Dockerfile.faulty
+    FROM mdoapp:1.0
+    CMD ["/nieistniejacy_skrypt.sh"]
+    ```
+    Obraz zbudowano i załadowano do Minikube:
+    ```bash
+    docker build -t mdoapp:faulty -f Dockerfile.faulty .
+    minikube image load mdoapp:faulty
+    ```
+   ![screen](screenshot/zaj11_3.png)
+    ![screen](screenshot/zaj11_4.png)
+
+Posiadanie tych trzech wersji obrazu było kluczowe dla dalszych etapów ćwiczenia.
+
+### 6.2. Zarządzanie Wersjami i Skalowanie Deploymentu `mdoapp-deployment`
+
+Dla aplikacji `mdoapp` utworzono plik wdrożenia `mdoapp-deployment.yaml`, początkowo skonfigurowany do uruchomienia jednej repliki z obrazem `mdoapp:1.0`.
+
+ ![screen](screenshot/zaj11_5.png)
+
+Następnie przeprowadzono serię operacji skalowania oraz zmiany wersji obrazu:
+*   **Początkowe wdrożenie (1 replika `mdoapp:1.0`):**
+    ![screen](screenshot/zaj11_6.png)
+*   **Skalowanie do 8 replik:** Zmiana `replicas: 8` w YAML i `kubectl apply`.
+     ![screen](screenshot/zaj11_7.png)
+*   **Skalowanie do 1 repliki:** Zmiana `replicas: 1` w YAML i `kubectl apply`.
+     ![screen](screenshot/zaj11_8.png)
+*   **Skalowanie do 0 replik:** Zmiana `replicas: 0` w YAML i `kubectl apply`.
+    ![screen](screenshot/zaj11_9.png)
+*   **Skalowanie do 4 replik:** Zmiana `replicas: 4` w YAML i `kubectl apply`.
+    ![screen](screenshot/zaj11_10.png)
+*   **Aktualizacja do `mdoapp:2.0` (4 repliki):** Zmiana `image: mdoapp:2.0` w YAML. Proces `RollingUpdate` był obserwowany.
+     ![screen](screenshot/zaj11_11.png)
+     ![screen](screenshot/zaj11_12.png)
+*   **Powrót do `mdoapp:1.0` (4 repliki):** Zmiana `image: mdoapp:1.0` w YAML.
+    ![screen](screenshot/zaj11_13.png)
+*   **Wdrożenie wadliwego obrazu `mdoapp:faulty` (4 repliki):** Zmiana `image: mdoapp:faulty` w YAML.
+    ![screen](screenshot/zaj11_14.png)
+    Zaobserwowano, że Pody przechodziły w stan `CrashLoopBackOff` lub `Error`. Logi jednego z wadliwych Podów potwierdziły przyczynę błędu:
+    ```
+    /docker-entrypoint.sh: exec: line 47: /nieistniejacy_skrypt.sh: not found
+    ```
+   ![screen](screenshot/zaj11_15.png)
+
+### 6.3. Mechanizmy Wycofywania Zmian (Rollback)
+
+Po celowym wdrożeniu wadliwej wersji aplikacji, przetestowano mechanizm rollbacku w Kubernetes.
+1.  Wyświetlono historię wdrożeń: `kubectl rollout history deployment/mdoapp-deployment`.
+2.  Sprawdzono szczegóły konkretnej rewizji (np. `--revision=3`), aby zidentyfikować obraz używany w tej rewizji (`mdoapp:1.0`).
+   ![screen](screenshot/zaj11_16.png)
+
+4.  Wykonano polecenie `kubectl rollout undo deployment/mdoapp-deployment`, aby przywrócić poprzednią, działającą konfigurację.
+5.  Zaobserwowano, że Pody z wadliwym obrazem zostały usunięte, a na ich miejsce wdrożono Pody ze stabilnym obrazem `mdoapp:1.0`.
+    ![screen](screenshot/zaj11_17.png)
+6.  Ponowne sprawdzenie historii wdrożeń (`kubectl rollout history ...`) pokazało, że operacja `undo` stworzyła nową rewizję (np. REVISION 5), która zawierała konfigurację z przywróconej, stabilnej wersji. Potwierdzono to inspekcją nowej rewizji.
+![screen](screenshot/zaj11_18.png)
+
+### 6.4. Automatyczna Kontrola Stanu Wdrożenia
+
+W celu automatyzacji weryfikacji, czy wdrożenie zakończyło się pomyślnie w zadanym czasie, przygotowano skrypt Bash `check_deployment_status.sh`.
+Początkowo napotkano problem z dostępnością polecenia `kubectl` w skrypcie (`kubectl: nie znaleziono polecenia`). Zdiagnozowano, że `kubectl` jest aliasem do `minikube kubectl --`. Problem rozwiązano przez zdefiniowanie zmiennej `KUBECTL_CMD="/usr/bin/minikube kubectl --"` w skrypcie.
+![screen](screenshot/zaj11_19.png)
+
+Skrypt przetestowano w trzech scenariuszach:
+1.  **Na stabilnym, już wdrożonym Deploymencie:** Skrypt natychmiast potwierdził poprawny stan.
+    ![screen](screenshot/zaj11_19.png)
+2.  **Podczas udanej aktualizacji (do `mdoapp:2.0`):** Skrypt monitorował proces i zakończył się sukcesem po osiągnięciu stabilności.
+    ![screen](screenshot/zaj11_20.png)
+3.  **Podczas nieudanej aktualizacji (do `mdoapp:faulty`):** Skrypt poprawnie wykrył, że Deployment nie osiągnął pożądanego stanu w ciągu 60 sekund, wyświetlił komunikat o timeout'cie oraz aktualny, problematyczny stan Podów.
+   ![screen](screenshot/zaj11_21.png)
+
+### 6.5. Strategie Wdrożenia Aplikacji
+
+Przetestowano różne strategie wdrażania aktualizacji, modyfikując plik `mdoapp-deployment.yaml` i obserwując zachowanie systemu. W każdym przypadku celem było wdrożenie 4 replik.
+
+**6.5.1. Strategia `Recreate`**
+Zmodyfikowano YAML, ustawiając `strategy: type: Recreate` i zmieniając obraz z `mdoapp:2.0` na `mdoapp:1.0`.
+![screen](screenshot/zaj11_22.png)*
+![screen](screenshot/zaj11_23.png)
+Zaobserwowano, że wszystkie stare Pody zostały najpierw zatrzymane (`Terminating`), a dopiero po ich usunięciu rozpoczęło się tworzenie nowych Podów. Wystąpił krótki przestój, gdy żaden Pod nie był w stanie `Running`.
+![screen](screenshot/zaj11_24.png)
+
+**6.5.2. Strategia `RollingUpdate` z niestandardowymi parametrami**
+Zmodyfikowano YAML, ustawiając `strategy: type: RollingUpdate` oraz `rollingUpdate: {maxUnavailable: 2, maxSurge: 1}`. Zmieniono obraz z `mdoapp:1.0` na `mdoapp:2.0`.
+![screen](screenshot/zaj11_25.png)
+Zaobserwowano stopniową wymianę Podów. Dzięki `maxSurge: 1`, chwilowo mogło istnieć 5 Podów. Aplikacja pozostała dostępna przez cały czas aktualizacji.
+![screen](screenshot/zaj11_26.png)
+**6.5.3. Symulacja Strategii `Canary Deployment`**
+Aby zasymulować wdrożenie kanarkowe:
+1.  Usunięto istniejący `mdoapp-deployment`.
+2.  Utworzono `mdoapp-stable-deployment.yaml` dla 3 replik z obrazem `mdoapp:1.0` i etykietą `version: stable`.
+   ![screen](screenshot/zaj11_27.png)
+3.  Utworzono `mdoapp-canary-deployment.yaml` dla 1 repliki z obrazem `mdoapp:2.0` i etykietą `version: canary`.
+    ![screen](screenshot/zaj11_28.png)
+4.  Utworzono Serwis `mdoapp-service.yaml` typu `NodePort` z selektorem `app: mdoapp`, aby kierował ruch do Podów z obu Deploymentów.
+    ![screen](screenshot/zaj11_29.png)
+
+Weryfikacja stanu pokazała istnienie obu Deploymentów oraz 4 Podów z odpowiednimi etykietami wersji. Polecenie `minikube service mdoapp-service` udostępniło adres URL do aplikacji.
+ ![screen](screenshot/zaj11_28.png)
+Rozkład ruchu w tej konfiguracji powinien wynosić około 3:1 na korzyść wersji stabilnej. Weryfikacja tego rozkładu wymagałaby odpowiedniego logowania żądań przez aplikację.
+
+### 6.6. Wnioski z Zaawansowanego Zarządzania Wdrożeniami
+
+Ćwiczenia z Zajęć 11 pozwoliły na pogłębienie wiedzy i praktycznych umiejętności związanych z zarządzaniem aplikacjami w Kubernetes. Zrozumienie mechanizmów wersjonowania obrazów, skalowania, przywracania poprzednich wersji oraz świadomego wyboru strategii wdrażania jest kluczowe dla utrzymania stabilności i dostępności aplikacji w środowiskach produkcyjnych. Skrypt do automatycznej weryfikacji stanu wdrożenia okazał się przydatnym narzędziem, które może być zintegrowane z procesami CI/CD. Zdolność do symulowania i obserwacji różnych scenariuszy, w tym wdrożeń wadliwych, buduje doświadczenie niezbędne do efektywnego zarządzania kontenerami.
+
+
+
+
+
