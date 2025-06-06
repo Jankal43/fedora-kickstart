@@ -159,7 +159,6 @@ Następnie przetestowano konfigurację inwentarza za pomocą modułu `ping` Ansi
 ```bash
 ansible all -i inventory.ini -m ping
 ```
-![screen](screenshot/s9.png)
 
 
    
@@ -275,8 +274,6 @@ ansible-playbook -i inventory.ini playbook.yml
 W podsumowaniu `PLAY RECAP` dla `ansible-target` widzimy: `ok=7`, `changed=3`, `unreachable=0`, `failed=0`, `skipped=0`, `rescued=0`, `ignored=1`. Oznacza to, że 3 zadania dokonały zmian w systemie, a jedno zadanie, mimo błędu, zostało zignorowane i nie przerwało całości.
 
 
-Oczywiście, dostosuję ten fragment, aby pasował stylistycznie i merytorycznie do reszty Twojego sprawozdania, zachowując formalny i techniczny ton.
-
 ---
 
 ### 3.3. Testowanie Odporności Ansible na Problemy z Łącznością
@@ -330,10 +327,6 @@ Przeprowadzony scenariusz wykazał, że Ansible jest wyposażony w mechanizmy po
 
 ---
 
-
-
-
-Oczywiście, oto propozycja kontynuacji sprawozdania, uwzględniająca zadanie dotyczące plików odpowiedzi Kickstart, dostarczone pliki oraz zrzuty ekranu. Założę, że pierwszy plik Kickstart to wersja początkowa/bazowa, a drugi to wersja rozszerzona o deployment aplikacji.
 
 ---
 
